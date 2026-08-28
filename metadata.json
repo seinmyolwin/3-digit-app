@@ -1,0 +1,6 @@
+{
+  "name": "3D Ledger Pro (သုံးလုံး ချဲ စာရင်း)",
+  "description": "Professional 3-Digit (3D / သုံးလုံး) lottery seller & dealer management app with fast sales entry, permutations (R), automated payout calculation, risk & liability analytics, low stock limit alerts, voucher generator, and Excel data export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -28,7 +28,9 @@ export const WinningPayoutView: React.FC = () => {
     clearWinningSettlement,
     roundSummary,
     exportToExcel,
-    updateVoucher
+    updateVoucher,
+    rounds,
+    setActiveRoundId
   } = useLottery();
 
   const isMyanmar = settings.language === 'my';
@@ -41,6 +43,13 @@ export const WinningPayoutView: React.FC = () => {
     String(activeRound?.toddMultiplier || settings.defaultToddMultiplier || 100)
   );
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Settled 3D rounds history strictly for 3D
+  const settled3DRounds = useMemo(() => {
+    return rounds
+      .filter(r => r.status === 'settled' || !!r.winningNumber)
+      .sort((a, b) => new Date(b.drawDate).getTime() - new Date(a.drawDate).getTime());
+  }, [rounds]);
 
   // Evaluate winners based on winning number & multipliers
   const winningResults = useMemo(() => {
@@ -211,6 +220,60 @@ ${settings.shopName} (${settings.shopPhone})`;
             ))}
           </div>
         </form>
+
+        {/* Previous 3D Winning Draws Quick Strip (Strictly 3D only) */}
+        {settled3DRounds.length > 0 && (
+          <div className="pt-4 border-t border-slate-100 space-y-2">
+            <div className="flex items-center justify-between text-xs text-slate-500 font-bold">
+              <span className="flex items-center gap-1.5 text-indigo-900">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>{isMyanmar ? '၃ လုံး အရင်ပွဲစဉ်များ၏ ထွက်ပေါက်ဂဏန်း မှတ်တမ်းများ:' : 'Previous 3D Winning Numbers:'}</span>
+              </span>
+              <span className="text-[11px] text-slate-400">
+                {settled3DRounds.length} {isMyanmar ? 'ကြိမ် ပြီးဆုံး' : 'rounds'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+              {settled3DRounds.slice(0, 6).map((r) => {
+                const isActive = r.id === activeRound?.id;
+                return (
+                  <div
+                    key={r.id}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs shrink-0 transition-all ${
+                      isActive
+                        ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-200 shadow-xs'
+                        : 'bg-slate-50 hover:bg-white border-slate-200'
+                    }`}
+                  >
+                    <div className="text-left">
+                      <span className="text-[10px] text-slate-500 block font-semibold">{r.drawDate}</span>
+                      <span className="text-xs font-bold text-slate-800 block truncate max-w-[120px]">{r.name}</span>
+                    </div>
+
+                    <div className="font-mono text-base font-black px-2 py-0.5 rounded-lg bg-indigo-950 text-amber-300 shadow-2xs border border-indigo-800">
+                      {r.winningNumber || '---'}
+                    </div>
+
+                    {!isActive && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveRoundId(r.id);
+                          if (r.winningNumber) setWinningInput(r.winningNumber);
+                        }}
+                        className="px-2 py-1 bg-white hover:bg-indigo-600 hover:text-white border border-slate-300 text-slate-700 text-[10px] font-bold rounded-lg transition-colors cursor-pointer"
+                        title="ဤပွဲစဉ်သို့ ကူးပြောင်းပြီး ပေါက်စာရင်းစစ်မည်"
+                      >
+                        {isMyanmar ? 'ဖွင့်စစ်မည်' : 'View'}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
       </div>
 

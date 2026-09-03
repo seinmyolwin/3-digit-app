@@ -50,8 +50,13 @@ interface LotteryContextType {
   limits: NumberLimit;
   blockedNumbers: BlockedNumbers;
   setNumberLimit: (number: string, limit: number) => void;
+  setBatchLimits: (numbers: string[], limit: number) => void;
   removeNumberLimit: (number: string) => void;
   toggleBlockNumber: (number: string) => void;
+  setBlockNumber: (number: string, blocked: boolean) => void;
+  setBatchBlocked: (numbers: string[], blocked: boolean) => void;
+  isNumberBlocked: (number: string) => boolean;
+  getNumberLimit: (number: string) => number;
 
   aggregates: { [num: string]: NumberAggregate };
   hotNumbers: NumberAggregate[];
@@ -202,7 +207,7 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       agg.retainedAmount = Math.max(0, agg.totalSold - agg.forwardedAmount);
       agg.estimatedPayout = agg.retainedAmount * multiplier;
 
-      const usageRatio = agg.limit > 0 ? (agg.totalSold / agg.limit) : 0;
+      const usageRatio = agg.limit > 0 ? (agg.retainedAmount / agg.limit) : 0;
       if (usageRatio >= 1 || agg.isBlocked) {
         agg.riskLevel = 'danger';
       } else if (usageRatio >= (settings.lowStockAlertPercentage / 100)) {
@@ -392,6 +397,18 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setLimits(prev => ({ ...prev, [number]: limit }));
   }, []);
 
+  const setBatchLimits = useCallback((numbers: string[], limit: number) => {
+    setLimits(prev => {
+      const next = { ...prev };
+      numbers.forEach(num => {
+        if (num && num.length === 3) {
+          next[num] = limit;
+        }
+      });
+      return next;
+    });
+  }, []);
+
   const removeNumberLimit = useCallback((number: string) => {
     setLimits(prev => {
       const copy = { ...prev };
@@ -403,6 +420,31 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const toggleBlockNumber = useCallback((number: string) => {
     setBlockedNumbers(prev => ({ ...prev, [number]: !prev[number] }));
   }, []);
+
+  const setBlockNumber = useCallback((number: string, blocked: boolean) => {
+    setBlockedNumbers(prev => ({ ...prev, [number]: blocked }));
+  }, []);
+
+  const setBatchBlocked = useCallback((numbers: string[], blocked: boolean) => {
+    setBlockedNumbers(prev => {
+      const next = { ...prev };
+      numbers.forEach(num => {
+        if (num && num.length === 3) {
+          next[num] = blocked;
+        }
+      });
+      return next;
+    });
+  }, []);
+
+  const isNumberBlocked = useCallback((number: string): boolean => {
+    return !!blockedNumbers[number];
+  }, [blockedNumbers]);
+
+  const getNumberLimit = useCallback((number: string): number => {
+    if (limits[number] !== undefined) return limits[number];
+    return settings.globalStockLimit;
+  }, [limits, settings.globalStockLimit]);
 
   const settleWinningNumber = useCallback((winningNumber: string, multiplier?: number, toddMultiplier?: number) => {
     if (!activeRoundId) return;
@@ -554,8 +596,13 @@ export const LotteryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         limits,
         blockedNumbers,
         setNumberLimit,
+        setBatchLimits,
         removeNumberLimit,
         toggleBlockNumber,
+        setBlockNumber,
+        setBatchBlocked,
+        isNumberBlocked,
+        getNumberLimit,
         aggregates,
         hotNumbers,
         lowStockAlerts,

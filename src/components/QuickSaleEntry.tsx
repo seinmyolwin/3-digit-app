@@ -13,11 +13,19 @@ import {
   User,
   Phone,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Camera,
+  Upload,
+  Ban,
+  ShieldAlert,
+  CheckCircle2,
+  X
 } from 'lucide-react';
 import { useLottery } from '../context/LotteryContext';
 import { BetItem, VoucherItem, Voucher } from '../types';
 import { getPermutations, parseQuickBetText, formatAmount, LOTTERY_PATTERNS } from '../utils/lotteryUtils';
+import { ImageSlipScannerModal } from './ImageSlipScannerModal';
+import { OverLimitConfirmModal, OverLimitItemInfo } from './OverLimitConfirmModal';
 
 interface QuickSaleEntryProps {
   onVoucherCreated: (voucher: Voucher) => void;
@@ -31,7 +39,10 @@ export const QuickSaleEntry: React.FC<QuickSaleEntryProps> = ({ onVoucherCreated
     aggregates,
     limits,
     blockedNumbers,
-    vouchers
+    vouchers,
+    isNumberBlocked,
+    getNumberLimit,
+    addForwardSlip
   } = useLottery();
 
   const isMyanmar = settings.language === 'my';
@@ -55,6 +66,59 @@ export const QuickSaleEntry: React.FC<QuickSaleEntryProps> = ({ onVoucherCreated
   const [rawBatchText, setRawBatchText] = useState('');
   const [batchErrors, setBatchErrors] = useState<string[]>([]);
 
+  // Photo Slip Scanner Modal state
+  const [isScannerModalOpen, setIsScannerModalOpen] = useState(false);
+
+  // Over-limit Decision Modal state
+  const [isOverLimitModalOpen, setIsOverLimitModalOpen] = useState(false);
+  const [pendingOverLimitItems, setPendingOverLimitItems] = useState<OverLimitItemInfo[]>([]);
+
+  // Floating Toast / Feedback notification
+  const [toastNotification, setToastNotification] = useState<{
+    type: 'error' | 'warning' | 'success';
+    message: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (toastNotification) {
+      const timer = setTimeout(() => {
+        setToastNotification(null);
+      }, 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastNotification]);
+
+  const handleAddFromScanner = (items: BetItem[], scannedCustomerName: string, scannedPhone: string) => {
+    const allowedItems: BetItem[] = [];
+    const blockedNums: string[] = [];
+
+    items.forEach(it => {
+      if (isNumberBlocked(it.number)) {
+        blockedNums.push(it.number);
+      } else {
+        allowedItems.push(it);
+      }
+    });
+
+    if (blockedNums.length > 0) {
+      const uniqueBlocked = Array.from(new Set(blockedNums));
+      setToastNotification({
+        type: 'warning',
+        message: `စလစ်ဓါတ်ပုံထဲမှ ဒိုင်ကာဂဏန်း [${uniqueBlocked.join(', ')}] များအား ထိုးကြေးတက်လာစေကာမူ လက်မခံဘဲ ပယ်ဖျက်ထားပါသည်`
+      });
+    }
+
+    if (allowedItems.length > 0) {
+      setStagedItems(prev => [...prev, ...allowedItems]);
+      if (scannedCustomerName && (!customerName || customerName === 'အထွေထွေ (General)')) {
+        setCustomerName(scannedCustomerName);
+      }
+      if (scannedPhone && !customerPhone) {
+        setCustomerPhone(scannedPhone);
+      }
+    }
+  };
+
   const numberInputRef = useRef<HTMLInputElement>(null);
   const amountInputRef = useRef<HTMLInputElement>(null);
 
@@ -70,23 +134,30 @@ export const QuickSaleEntry: React.FC<QuickSaleEntryProps> = ({ onVoucherCreated
   }, [vouchers]);
 
   // Current number limit check
+  const isInputBlocked = useMemo(() => {
+    return numberInput.length === 3 && isNumberBlocked(numberInput);
+  }, [numberInput, isNumberBlocked]);
+
   const currentNumberWarning = useMemo(() => {
     if (!numberInput || numberInput.length !== 3) return null;
     const num = numberInput;
     const agg = aggregates[num];
-    const isBlocked = !!blockedNumbers[num];
-    const limit = limits[num] !== undefined ? limits[num] : settings.globalStockLimit;
+    const isBlocked = isNumberBlocked(num);
+    const limit = getNumberLimit(num);
     const currentSold = agg ? agg.totalSold : 0;
     const amt = parseInt(amountInput, 10) || 0;
     const totalWillBe = currentSold + amt;
 
     if (isBlocked) {
-      return { type: 'danger', message: `ဂဏန်း [${num}] သည် ပိတ်ထားသောဂဏန်း (Blocked) ဖြစ်ပါသည်!` };
+      return {
+        type: 'danger',
+        message: `⛔ ဤဂဏန်း [${num}] သည် ဒိုင်ကာဂဏန်း ဖြစ်ပါသည်! ထိုးကြေးမည်မျှတက်လာစေကာမူ လုံးဝလက်မခံပါ!`
+      };
     }
     if (limit > 0 && totalWillBe > limit) {
       return {
-        type: 'danger',
-        message: `ဂဏန်း [${num}] ကန့်သတ်ချက် ပြည့်တော့မည် (ရောင်းပြီး: ${formatAmount(currentSold, settings.currency)} / ဘရိတ်: ${formatAmount(limit, settings.currency)})`
+        type: 'warning',
+        message: `⚠️ ဂဏန်း [${num}] သတ်မှတ်ထိုးကြေး ကျော်လွန်နေပါသည် (ရောင်းပြီး: ${formatAmount(currentSold, settings.currency)} / ဘရိတ်: ${formatAmount(limit, settings.currency)}) - ဘောင်ချာထုတ်ချိန်တွင် ဒိုင်ကြီးဆီ ဆက်တင်နိုင်ပါသည်`
       };
     }
     if (limit > 0 && (totalWillBe / limit) >= (settings.lowStockAlertPercentage / 100)) {
@@ -96,7 +167,7 @@ export const QuickSaleEntry: React.FC<QuickSaleEntryProps> = ({ onVoucherCreated
       };
     }
     return null;
-  }, [numberInput, amountInput, aggregates, limits, blockedNumbers, settings]);
+  }, [numberInput, amountInput, aggregates, isNumberBlocked, getNumberLimit, settings]);
 
   // Permutation count preview
   const permPreview = useMemo(() => {
@@ -131,30 +202,63 @@ export const QuickSaleEntry: React.FC<QuickSaleEntryProps> = ({ onVoucherCreated
       return;
     }
 
-    const newItems: BetItem[] = [];
-
-    if (isRumble) {
-      const perms = getPermutations(numberInput);
-      perms.forEach((p, idx) => {
-        newItems.push({
-          id: `item-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 3)}`,
-          number: p,
-          amount: amount,
-          isRumble: true,
-          originalInput: `${numberInput} R`
+    // Check if dealer protected number
+    if (!isRumble) {
+      if (isNumberBlocked(numberInput)) {
+        setToastNotification({
+          type: 'error',
+          message: `⛔ ဂဏန်း [${numberInput}] သည် ဒိုင်ကာဂဏန်းအဖြစ် သတ်မှတ်ထားသဖြင့် ထိုးကြေးတက်လာသော်လည်း လုံးဝလက်မခံပါ!`
         });
-      });
-    } else {
-      newItems.push({
+        return;
+      }
+
+      const newItem: BetItem = {
         id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 3)}`,
         number: numberInput,
         amount: amount,
         isRumble: false,
         originalInput: numberInput
+      };
+      setStagedItems(prev => [...prev, newItem]);
+    } else {
+      const perms = getPermutations(numberInput);
+      const allowedPerms: string[] = [];
+      const blockedPerms: string[] = [];
+
+      perms.forEach(p => {
+        if (isNumberBlocked(p)) {
+          blockedPerms.push(p);
+        } else {
+          allowedPerms.push(p);
+        }
       });
+
+      if (blockedPerms.length > 0) {
+        setToastNotification({
+          type: 'warning',
+          message: `သတိပြုရန်: ဒိုင်ကာဂဏန်းအဖြစ် သတ်မှတ်ထားသော [${blockedPerms.join(', ')}] များအား ထိုးကြေးလက်မခံဘဲ ချန်လှပ်ထားပါသည်`
+        });
+      }
+
+      if (allowedPerms.length === 0) {
+        setToastNotification({
+          type: 'error',
+          message: `⛔ ရွေးချယ်ထားသော ပတ်လည်ဂဏန်းအားလုံးသည် ဒိုင်ကာဂဏန်းများဖြစ်သဖြင့် ထိုးကြေးလုံးဝလက်မခံပါ!`
+        });
+        return;
+      }
+
+      const newItems: BetItem[] = allowedPerms.map((p, idx) => ({
+        id: `item-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 3)}`,
+        number: p,
+        amount: amount,
+        isRumble: true,
+        originalInput: `${numberInput} R`
+      }));
+
+      setStagedItems(prev => [...prev, ...newItems]);
     }
 
-    setStagedItems(prev => [...prev, ...newItems]);
     setNumberInput('');
     setIsRumble(false);
     numberInputRef.current?.focus();
@@ -168,7 +272,19 @@ export const QuickSaleEntry: React.FC<QuickSaleEntryProps> = ({ onVoucherCreated
   // Add Pattern Numbers (e.g. Triples/Doubles, Power, Natkhat)
   const handleAddPattern = (name: string, numbers: string[]) => {
     const amount = parseInt(amountInput, 10) || 1000;
-    const newItems: BetItem[] = numbers.map((num, idx) => ({
+    const allowed = numbers.filter(n => !isNumberBlocked(n));
+    const blocked = numbers.filter(n => isNumberBlocked(n));
+
+    if (blocked.length > 0) {
+      setToastNotification({
+        type: 'warning',
+        message: `သတိပြုရန်: [${name}] အတွင်းမှ ဒိုင်ကာဂဏန်း [${blocked.join(', ')}] များအား ထိုးကြေးလက်မခံဘဲ ချန်လှပ်ထားပါသည်`
+      });
+    }
+
+    if (allowed.length === 0) return;
+
+    const newItems: BetItem[] = allowed.map((num, idx) => ({
       id: `item-pat-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 3)}`,
       number: num,
       amount: amount,
@@ -182,36 +298,52 @@ export const QuickSaleEntry: React.FC<QuickSaleEntryProps> = ({ onVoucherCreated
   const handleProcessBatchText = () => {
     if (!rawBatchText.trim()) return;
     const { items, errors } = parseQuickBetText(rawBatchText);
-    setBatchErrors(errors);
-    if (items.length > 0) {
-      setStagedItems(prev => [...prev, ...items]);
+    const allowedItems: BetItem[] = [];
+    const blockedErrors: string[] = [];
+
+    items.forEach(it => {
+      if (isNumberBlocked(it.number)) {
+        blockedErrors.push(`⛔ ဂဏန်း [${it.number}] သည် ဒိုင်ကာဂဏန်း ဖြစ်သဖြင့် ထိုးကြေးတက်လာသော်လည်း လုံးဝလက်မခံပါ (ပယ်ဖျက်သည်)`);
+      } else {
+        allowedItems.push(it);
+      }
+    });
+
+    setBatchErrors([...errors, ...blockedErrors]);
+
+    if (allowedItems.length > 0) {
+      setStagedItems(prev => [...prev, ...allowedItems]);
       setRawBatchText('');
-      if (errors.length === 0) {
+      if (errors.length === 0 && blockedErrors.length === 0) {
         setShowBatchModal(false);
       }
     }
   };
 
-  // Submit Voucher
-  const handleSaveVoucher = () => {
-    if (stagedItems.length === 0) return;
-
-    const voucherItems: VoucherItem[] = stagedItems.map(item => ({
+  // Finalize and Save Voucher helper
+  const finalizeAndSaveVoucher = (itemsToSave: BetItem[], extraNotes?: string) => {
+    const voucherItems: VoucherItem[] = itemsToSave.map(item => ({
       number: item.number,
       amount: item.amount,
       betType: item.isRumble ? 'rumble' : 'straight'
     }));
+
+    const finalSubtotal = itemsToSave.reduce((acc, item) => acc + item.amount, 0);
+    const finalDiscount = discountPercent > 0 ? Math.round((finalSubtotal * discountPercent) / 100) : 0;
+    const finalNetPayable = finalSubtotal - finalDiscount;
+
+    const mergedNotes = [notes.trim(), extraNotes].filter(Boolean).join(' ');
 
     const newVoucher = addVoucher({
       roundId: activeRound?.id || 'default',
       customerName: customerName.trim() || 'အထွေထွေ (General)',
       customerPhone: customerPhone.trim(),
       items: voucherItems,
-      subtotal,
+      subtotal: finalSubtotal,
       discountPercent,
-      discountAmount,
-      netPayable,
-      notes: notes.trim(),
+      discountAmount: finalDiscount,
+      netPayable: finalNetPayable,
+      notes: mergedNotes,
       isPaid: true,
       status: 'active'
     });
@@ -219,13 +351,195 @@ export const QuickSaleEntry: React.FC<QuickSaleEntryProps> = ({ onVoucherCreated
     // Clear Staging
     setStagedItems([]);
     setNotes('');
+    setToastNotification({
+      type: 'success',
+      message: `ဘောင်ချာ ${newVoucher.voucherNumber} အား အောင်မြင်စွာ သိမ်းဆည်းပြီးပါပြီ`
+    });
     onVoucherCreated(newVoucher);
+  };
+
+  // Submit Voucher - checks for Blocked & Over-limit numbers
+  const handleSaveVoucher = () => {
+    if (stagedItems.length === 0) return;
+
+    // 1. Strict Fail-Safe: Check for any Blocked Numbers (ဒိုင်ကာဂဏန်း)
+    const blockedFound = stagedItems.filter(item => isNumberBlocked(item.number));
+    if (blockedFound.length > 0) {
+      const bNums = Array.from(new Set(blockedFound.map(b => b.number)));
+      alert(`⚠️ သတိပေးချက်: အောက်ပါဂဏန်းများသည် 'ဒိုင်ကာဂဏန်း' ဖြစ်သဖြင့် ထိုးကြေးတက်လာစေကာမူ လုံးဝလက်မခံနိုင်ပါ:\n\n[${bNums.join(', ')}]\n\nအဆိုပါဂဏန်းများကို စာရင်းမှ ဖယ်ရှားပေးပါမည်။`);
+      setStagedItems(prev => prev.filter(item => !isNumberBlocked(item.number)));
+      return;
+    }
+
+    // 2. Over-Limit Check across cart items
+    const cartTotals: { [num: string]: number } = {};
+    stagedItems.forEach(item => {
+      cartTotals[item.number] = (cartTotals[item.number] || 0) + item.amount;
+    });
+
+    const overLimits: OverLimitItemInfo[] = [];
+    Object.entries(cartTotals).forEach(([num, totalInCart]) => {
+      const limit = getNumberLimit(num);
+      const existingSold = aggregates[num]?.totalSold || 0;
+      if (limit > 0 && (existingSold + totalInCart > limit)) {
+        const remainingQuota = Math.max(0, limit - existingSold);
+        const excessAmount = (existingSold + totalInCart) - limit;
+
+        overLimits.push({
+          id: `over-${num}`,
+          number: num,
+          originalAmount: totalInCart,
+          existingSold,
+          limit,
+          remainingQuota,
+          excessAmount,
+          action: 'forward_excess'
+        });
+      }
+    });
+
+    // If any item exceeds limit, open the confirmation modal!
+    if (overLimits.length > 0) {
+      setPendingOverLimitItems(overLimits);
+      setIsOverLimitModalOpen(true);
+      return;
+    }
+
+    // If no limits exceeded, save immediately
+    finalizeAndSaveVoucher(stagedItems);
+  };
+
+  // Confirm over-limit resolution from OverLimitConfirmModal
+  const handleConfirmOverLimit = (
+    decisions: OverLimitItemInfo[],
+    masterAgentName: string,
+    masterAgentPhone: string,
+    commissionRate: number
+  ) => {
+    const forwardItems: { number: string; amount: number }[] = [];
+    const forwardNotesList: string[] = [];
+
+    const decisionMap = new Map<string, OverLimitItemInfo>();
+    decisions.forEach(d => decisionMap.set(d.number, d));
+
+    const finalItems: BetItem[] = [];
+
+    // Group staged items by number
+    const itemsByNumber: { [num: string]: BetItem[] } = {};
+    stagedItems.forEach(item => {
+      if (!itemsByNumber[item.number]) itemsByNumber[item.number] = [];
+      itemsByNumber[item.number].push(item);
+    });
+
+    Object.entries(itemsByNumber).forEach(([num, numItems]) => {
+      const decision = decisionMap.get(num);
+
+      if (!decision) {
+        // Not an over-limit number, keep as is
+        finalItems.push(...numItems);
+        return;
+      }
+
+      if (decision.action === 'forward_excess') {
+        // Retain customer's full bet on slip, forward the excess portion to Master Agent
+        finalItems.push(...numItems);
+        if (decision.excessAmount > 0) {
+          forwardItems.push({ number: num, amount: decision.excessAmount });
+          forwardNotesList.push(`${num} (+${formatAmount(decision.excessAmount, settings.currency)})`);
+        }
+      } else if (decision.action === 'forward_all') {
+        // Retain on customer slip, forward all to Master Agent
+        finalItems.push(...numItems);
+        if (decision.originalAmount > 0) {
+          forwardItems.push({ number: num, amount: decision.originalAmount });
+          forwardNotesList.push(`${num} (အားလုံး ${formatAmount(decision.originalAmount, settings.currency)})`);
+        }
+      } else if (decision.action === 'accept_locally') {
+        // Dealer retains 100% locally
+        finalItems.push(...numItems);
+      } else if (decision.action === 'cap_at_limit') {
+        // Only accept up to remaining quota on the customer slip
+        if (decision.remainingQuota > 0) {
+          finalItems.push({
+            ...numItems[0],
+            amount: decision.remainingQuota
+          });
+        }
+      } else if (decision.action === 'reject') {
+        // Completely discard this number
+      }
+    });
+
+    // Create Master Dealer Forward Slip if any items forwarded
+    let forwardNotes = '';
+    if (forwardItems.length > 0) {
+      const fwdTotal = forwardItems.reduce((acc, i) => acc + i.amount, 0);
+      const commRate = commissionRate || settings.defaultCommissionRate || 10;
+      const commAmt = Math.round((fwdTotal * commRate) / 100);
+      const netPaid = fwdTotal - commAmt;
+
+      addForwardSlip({
+        roundId: activeRound?.id || 'default',
+        masterAgentName: masterAgentName || settings.defaultMasterAgentName || 'ဒိုင်ချုပ်ကြီး',
+        masterAgentPhone: masterAgentPhone || settings.defaultMasterAgentPhone || '',
+        items: forwardItems,
+        totalAmount: fwdTotal,
+        commissionRate: commRate,
+        commissionAmount: commAmt,
+        netPaid,
+        notes: `ဖောက်သည် ${customerName || 'အထွေထွေ'} ၏ ဘောင်ချာမှ သတ်မှတ်ထိုးကြေး ပိုလျှံငွေ အထက်တင်ခြင်း`
+      });
+
+      forwardNotes = `(ဒိုင်ကြီးဆီ ဆက်တင်ငွေ: ${forwardNotesList.join(', ')})`;
+    }
+
+    setIsOverLimitModalOpen(false);
+    setPendingOverLimitItems([]);
+
+    if (finalItems.length > 0) {
+      finalizeAndSaveVoucher(finalItems, forwardNotes);
+    } else {
+      alert(isMyanmar ? 'ထိုးဂဏန်းများ အားလုံး ပယ်ဖျက်လိုက်သဖြင့် ဘောင်ချာမထုတ်ပါ' : 'All bets rejected, voucher not created.');
+      setStagedItems([]);
+    }
   };
 
   const quickAmounts = [500, 1000, 2000, 3000, 5000, 10000, 20000];
 
   return (
     <div className="max-w-7xl mx-auto p-3 sm:p-6 space-y-6">
+      {/* Floating / Top Toast Notification */}
+      {toastNotification && (
+        <div
+          className={`rounded-2xl p-4 border flex items-center justify-between gap-3 shadow-md animate-in fade-in slide-in-from-top-2 duration-200 ${
+            toastNotification.type === 'error'
+              ? 'bg-rose-50 border-rose-200 text-rose-900'
+              : toastNotification.type === 'warning'
+              ? 'bg-amber-50 border-amber-200 text-amber-900'
+              : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            {toastNotification.type === 'error' ? (
+              <Ban className="w-5 h-5 text-rose-600 shrink-0" />
+            ) : toastNotification.type === 'warning' ? (
+              <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0" />
+            ) : (
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            )}
+            <span className="text-xs sm:text-sm font-bold">
+              {toastNotification.message}
+            </span>
+          </div>
+          <button
+            onClick={() => setToastNotification(null)}
+            className="p-1 rounded-lg hover:bg-black/5 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Top Banner / Round Status notice */}
       {activeRound?.status === 'settled' && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex items-center justify-between text-amber-900 text-sm shadow-2xs">
@@ -263,15 +577,29 @@ export const QuickSaleEntry: React.FC<QuickSaleEntryProps> = ({ onVoucherCreated
                 </div>
               </div>
 
-              {/* Batch Text Input Trigger */}
-              <button
-                type="button"
-                onClick={() => setShowBatchModal(!showBatchModal)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-indigo-700 border border-slate-200 text-xs font-semibold transition-all cursor-pointer"
-              >
-                <FileText className="w-3.5 h-3.5" />
-                <span>{isMyanmar ? 'စာသားဖြင့် စုပြုံထည့်ရန် (Batch Paste)' : 'Batch Paste'}</span>
-              </button>
+              {/* Action Buttons (Photo Scan & Batch Text) */}
+              <div className="flex items-center gap-2">
+                {/* Photo OCR Scanner Trigger */}
+                <button
+                  type="button"
+                  onClick={() => setIsScannerModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-transform active:scale-95 shadow-2xs cursor-pointer"
+                  title="ဓါတ်ပုံ / စလစ်ထဲမှ ဂဏန်းများကို အလိုအလျောက် ဖတ်ယူရန်"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>{isMyanmar ? 'ဓါတ်ပုံ / စလစ် စကင်ဖတ်မည်' : 'Scan Slip Photo'}</span>
+                </button>
+
+                {/* Batch Text Input Trigger */}
+                <button
+                  type="button"
+                  onClick={() => setShowBatchModal(!showBatchModal)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-indigo-700 border border-slate-200 text-xs font-semibold transition-all cursor-pointer"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>{isMyanmar ? 'စာသားဖြင့် ကူးထည့်ရန်' : 'Batch Paste'}</span>
+                </button>
+              </div>
             </div>
 
             {/* Batch Text Drawer (if toggled) */}
@@ -376,10 +704,24 @@ export const QuickSaleEntry: React.FC<QuickSaleEntryProps> = ({ onVoucherCreated
                 <div className="sm:col-span-3 flex items-end">
                   <button
                     type="submit"
-                    className="w-full h-[52px] bg-indigo-600 hover:bg-indigo-700 text-white font-black text-sm rounded-xl flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer"
+                    disabled={isInputBlocked}
+                    className={`w-full h-[52px] font-black text-sm rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition-all ${
+                      isInputBlocked
+                        ? 'bg-rose-100 text-rose-700 cursor-not-allowed border-2 border-rose-300 select-none'
+                        : 'bg-indigo-600 hover:bg-indigo-700 text-white active:scale-95 cursor-pointer'
+                    }`}
                   >
-                    <Plus className="w-5 h-5" />
-                    <span>{isMyanmar ? 'ထည့်မည်' : 'Add'}</span>
+                    {isInputBlocked ? (
+                      <>
+                        <Ban className="w-4 h-4 text-rose-600" />
+                        <span>{isMyanmar ? 'ဒိုင်ကာ (ပိတ်)' : 'Protected'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-5 h-5" />
+                        <span>{isMyanmar ? 'ထည့်မည်' : 'Add'}</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
@@ -595,10 +937,16 @@ export const QuickSaleEntry: React.FC<QuickSaleEntryProps> = ({ onVoucherCreated
 
                 <div className="bg-slate-50 border border-slate-200 rounded-xl max-h-60 overflow-y-auto divide-y divide-slate-100 p-1">
                   {stagedItems.length === 0 ? (
-                    <div className="py-10 text-center text-slate-400 text-xs">
-                      {isMyanmar
-                        ? 'ဂဏန်းများ ထည့်သွင်းထားခြင်း မရှိသေးပါ'
-                        : 'No numbers added to slip yet'}
+                    <div className="py-8 px-4 text-center text-slate-400 text-xs space-y-2.5">
+                      <p>{isMyanmar ? 'ဂဏန်းများ ထည့်သွင်းထားခြင်း မရှိသေးပါ' : 'No numbers added to slip yet'}</p>
+                      <button
+                        type="button"
+                        onClick={() => setIsScannerModalOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-indigo-700 border border-indigo-200 text-xs font-semibold shadow-2xs cursor-pointer transition-colors"
+                      >
+                        <Camera className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>{isMyanmar ? 'ဓါတ်ပုံစလစ် ရိုက်ထည့်ရန် နှိပ်ပါ' : 'Scan Voucher Photo'}</span>
+                      </button>
                     </div>
                   ) : (
                     stagedItems.map((item, idx) => (
@@ -720,6 +1068,25 @@ export const QuickSaleEntry: React.FC<QuickSaleEntryProps> = ({ onVoucherCreated
         </div>
 
       </div>
+
+      {/* Photo Slip OCR Scanner Modal */}
+      <ImageSlipScannerModal
+        isOpen={isScannerModalOpen}
+        onClose={() => setIsScannerModalOpen(false)}
+        onAddItems={handleAddFromScanner}
+      />
+
+      {/* Over-Limit / Dealer Forwarding Decision Modal */}
+      <OverLimitConfirmModal
+        isOpen={isOverLimitModalOpen}
+        onClose={() => {
+          setIsOverLimitModalOpen(false);
+          setPendingOverLimitItems([]);
+        }}
+        overLimitItems={pendingOverLimitItems}
+        customerName={customerName}
+        onConfirm={handleConfirmOverLimit}
+      />
     </div>
   );
 };

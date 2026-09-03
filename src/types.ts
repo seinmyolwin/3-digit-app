@@ -76,6 +76,7 @@ export interface BlockedNumbers {
 }
 
 export interface AppSettings {
+  appName: string; // Customizable App Name e.g. "ရွှေမင်္ဂလာ ၃ လုံး စာရင်းစနစ်"
   shopName: string;
   shopPhone: string;
   shopAddress?: string;
@@ -90,6 +91,22 @@ export interface AppSettings {
   soundEffects: boolean;
   printPaperSize: '58mm' | '80mm' | 'A4';
   voucherFooterMessage: string;
+  defaultMasterAgentName?: string;
+  defaultMasterAgentPhone?: string;
+}
+
+export type OverLimitAction = 'forward_excess' | 'forward_all' | 'accept_locally' | 'cap_at_limit' | 'reject';
+
+export interface OverLimitItemInfo {
+  id: string;
+  number: string;
+  originalAmount: number;
+  isRumble?: boolean;
+  existingSold: number;
+  limit: number;
+  remainingQuota: number;
+  excessAmount: number;
+  action: OverLimitAction;
 }
 
 export interface NumberAggregate {
@@ -129,3 +146,239 @@ export interface LowStockAlert {
   timestamp: string;
   type: 'near_limit' | 'limit_reached' | 'blocked';
 }
+
+// ----------------------------------------------------
+// 2D LOTTERY (နှစ်လုံး ချဲထီ ဒိုင်) TYPES
+// ----------------------------------------------------
+export interface TwoDDrawRound {
+  id: string;
+  name: string; // e.g., "02-Sep-2026 (12:01 PM မနက်ပိုင်း)" or "02-Sep-2026 (04:30 PM ညနေပိုင်း)"
+  drawDate: string; // "2026-09-02"
+  session: 'morning' | 'evening' | 'special'; // 12:01 PM or 04:30 PM
+  closingTime: string; // "12:00" or "16:25"
+  status: 'open' | 'closed' | 'settled';
+  winningNumber?: string; // 2 digits: "00" - "99"
+  multiplier: number; // default 85 (e.g. 1000 ks wins 85,000 ks)
+  commissionRate: number; // e.g. 12%
+  settledAt?: string;
+}
+
+export interface TwoDBetItem {
+  id: string;
+  number: string; // 2 digits: "00" - "99"
+  amount: number;
+  isRumble?: boolean;
+  originalInput?: string; // e.g. "24 R" or "အပူး"
+}
+
+export interface TwoDVoucherItem {
+  number: string;
+  amount: number;
+  betType: BetType;
+  isWon?: boolean;
+  wonAmount?: number;
+}
+
+export interface TwoDVoucher {
+  id: string;
+  voucherNo: string; // e.g. "V-2D-1001"
+  roundId: string;
+  customerName: string;
+  customerPhone?: string;
+  items: TwoDVoucherItem[];
+  subtotal: number;
+  discountPercent: number;
+  discountAmount: number;
+  netPayable: number;
+  createdAt: string;
+  notes?: string;
+  isPaid: boolean;
+  status: 'active' | 'cancelled' | 'settled';
+}
+
+export interface TwoDForwardSlip {
+  id: string;
+  slipNo: string;
+  roundId: string;
+  masterAgentName: string;
+  masterAgentPhone?: string;
+  items: ForwardSlipItem[];
+  totalAmount: number;
+  commissionRate: number;
+  commissionAmount: number;
+  netPaid: number;
+  createdAt: string;
+  notes?: string;
+}
+
+export interface TwoDAppSettings {
+  appName: string;
+  shopName: string;
+  shopPhone: string;
+  shopAddress?: string;
+  currency: string;
+  defaultMultiplier: number; // 85x
+  defaultCommissionRate: number; // 12%
+  defaultCustomerDiscount: number; // 0%
+  globalStockLimit: number; // e.g. 150,000 Ks per 2D number
+  lowStockAlertPercentage: number; // 80%
+  language: 'my' | 'en';
+  soundEffects: boolean;
+  printPaperSize: '58mm' | '80mm' | 'A4';
+  voucherFooterMessage: string;
+  defaultMasterAgentName?: string;
+  defaultMasterAgentPhone?: string;
+}
+
+export interface TwoDNumberAggregate {
+  number: string;
+  totalSold: number;
+  forwardedAmount: number;
+  retainedAmount: number;
+  limit: number;
+  isBlocked: boolean;
+  betCount: number;
+  estimatedPayout: number;
+  netRisk: number;
+  riskLevel: 'safe' | 'warning' | 'danger';
+}
+
+export interface TwoDRoundSummary {
+  totalSales: number;
+  totalVouchers: number;
+  totalDiscount: number;
+  netRevenue: number;
+  totalForwarded: number;
+  forwardedCommission: number;
+  totalPayout: number;
+  winningNumber?: string;
+  totalWinnersCount: number;
+  netProfit: number;
+  isProfit: boolean;
+}
+
+// ----------------------------------------------------
+// FOOTBALL BETTING (ဘောလုံးဒိုင် - မောင်း & ဘော်ဒီ) TYPES
+// ----------------------------------------------------
+export type FootballBetType = 'body_home' | 'body_away' | 'over' | 'under';
+export type FootballSlipType = 'body_single' | 'maung';
+export type MatchResultStatus = 'upcoming' | 'live' | 'finished';
+export type SelectionOutcome = 'pending' | 'win' | 'half_win' | 'draw' | 'half_loss' | 'loss';
+
+export interface FootballLeague {
+  id: string;
+  name: string;
+  teams: string[];
+}
+
+export interface FootballMatch {
+  id: string;
+  league: string; // e.g. "English Premier League", "UEFA Champions League"
+  homeTeam: string;
+  awayTeam: string;
+  matchDate: string; // "2026-09-03"
+  kickoffTime: string; // "21:00"
+  handicapTeam: 'home' | 'away' | 'level'; // Which team gives handicap
+  handicapValue: string; // e.g. "0.5 (ဝက်)", "0-50 (သရေ ၅၀ ရှုံး)", "1-80 (၁ လုံး ၈၀ စား)", "1=1.5 (၁ ပြား ၇၀)", "0=0 (တူတူ)"
+  overUnderValue: string; // e.g. "2.5 (၂ လုံးခွဲ)", "2.5-3 (၂ လုံးခွဲ ၃ လုံးရှုံး)", "3=3.5 (၃ ပြား ၇၀)"
+  bodyOdds: number; // Decimal odds e.g. 1.90
+  goalOdds: number; // Decimal odds e.g. 1.90
+  homeScore?: number;
+  awayScore?: number;
+  status: MatchResultStatus;
+  isFeatured?: boolean;
+}
+
+export interface FootballBetSelection {
+  matchId: string;
+  matchSummary: string; // "Arsenal vs Chelsea"
+  league: string;
+  betType: FootballBetType; // 'body_home' | 'body_away' | 'over' | 'under'
+  choiceLabel: string; // "Arsenal (-0.5)" or "Over 2.5"
+  lineDescription: string; // "အကြော 0.5 (ဝက်)"
+  odds: number; // e.g. 1.90
+  homeScore?: number;
+  awayScore?: number;
+  outcome?: SelectionOutcome;
+}
+
+export interface FootballSlip {
+  id: string;
+  slipNo: string; // e.g. "FB-0902-1001"
+  roundDate: string; // "2026-09-02"
+  customerName: string;
+  customerPhone?: string;
+  slipType: FootballSlipType; // 'body_single' or 'maung'
+  selections: FootballBetSelection[];
+  teamCount: number; // 1 for single, 2..11 for maung
+  stakeAmount: number;
+  discountPercent: number;
+  discountAmount: number;
+  netPayable: number;
+  combinedOdds: number; // e.g. 1.90 * 1.90 * 1.90 = 6.85
+  potentialPayout: number;
+  actualPayout?: number;
+  outcome?: 'pending' | 'won' | 'half_won' | 'draw' | 'lost';
+  status: 'active' | 'settled' | 'cancelled';
+  createdAt: string;
+  notes?: string;
+}
+
+export interface FootballForwardSlip {
+  id: string;
+  slipNo: string;
+  roundDate: string;
+  masterAgentName: string;
+  masterAgentPhone?: string;
+  slipType: 'body' | 'maung';
+  description: string;
+  matchesSummary: string;
+  stakeAmount: number;
+  commissionRate: number; // e.g. 8%
+  commissionAmount: number;
+  netPaid: number;
+  potentialPayout: number;
+  actualPayout?: number;
+  status: 'active' | 'settled';
+  createdAt: string;
+  notes?: string;
+}
+
+export interface FootballSettings {
+  appName: string;
+  shopName: string;
+  shopPhone: string;
+  currency: string;
+  minMaungCount: number; // default 2
+  maxMaungCount: number; // default 11
+  defaultCommissionRate: number; // 10%
+  defaultCustomerDiscount: number; // 0%
+  maxPayoutPerTicket: number; // e.g. 10,000,000 Ks
+  language: 'my' | 'en';
+  soundEffects: boolean;
+  printPaperSize: '58mm' | '80mm' | 'A4';
+  slipFooterMessage: string;
+  defaultMasterAgentName?: string;
+  defaultMasterAgentPhone?: string;
+}
+
+export interface FootballSummary {
+  totalStake: number;
+  totalTickets: number;
+  totalBodyStake: number;
+  totalMaungStake: number;
+  totalDiscount: number;
+  netRevenue: number;
+  totalForwarded: number;
+  forwardedCommission: number;
+  totalPayout: number;
+  netProfit: number;
+  isProfit: boolean;
+  wonTicketsCount: number;
+  lostTicketsCount: number;
+  pendingTicketsCount: number;
+}
+
+// Master Bookie Mode
+export type BookieMode = '3d' | '2d' | 'football';
+
